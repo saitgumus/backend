@@ -40,8 +40,8 @@ let nodePort = "3000";
 let nodePath = "127.0.0.1";
 
 //connection the db
-let uri = "mongodb://localhost:27017/carchain";
-
+//let uri = "mongodb://localhost:27017/carchain";
+let uri = "mongodb://carchainadmin:carchain1@ds357955.mlab.com:57955/chaincar";
  mongoose.connect(uri,{useNewUrlParser:true},err => { //uri, { useNewUrlParser: true }, err =>
   if (err) throw err;
   else console.log("connection successful");
