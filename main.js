@@ -46,20 +46,6 @@ let uri = "mongodb://localhost:27017/carchain";
   if (err) throw err;
   else console.log("connection successful");
 
-  //create genesis
-  // let genesis = testChain.Chain[0];
-  // let _block = new Block({
-  //   index: genesis.index,
-  //   timeStamp: genesis.timeStamp,
-  //   transactions: genesis.transactions,
-  //   previousHash: genesis.previousHash,
-  //   hash: genesis.hash
-  // });
-
-  // _block.save( (err)=>{
-  //   if(err) throw err;
-  //   else console.log('genesis oluşturuldu!');
-  // } );
 
 });
 
@@ -127,6 +113,28 @@ Request("http://myexternalip.com/raw",(err,resp,ip)=>{
       Block.find({},(err,data)=>{
         if(err) throw err;
         else{
+
+          //genesis denetleme gövdesi
+          if(data.length == 0){
+
+            //create genesis
+            let genesis = testChain.Chain[0];
+            let _genesis = new Block({
+              index: genesis.index,
+              timeStamp: genesis.timeStamp,
+              transactions: genesis.transactions,
+              previousHash: genesis.previousHash,
+              hash: genesis.hash
+            });
+
+            _genesis.save( (err)=>{
+              if(err) throw err;
+              else console.log('genesis oluşturuldu!');
+            } );
+          }
+
+
+          //yeni block ekleme
           let i=0;
           for( i=1;i<data.length ; i++){
             if(data[i].previousHash !== data[i-1].hash )
