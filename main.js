@@ -83,6 +83,9 @@ Node.find({'ip':_ip},'ip',(err,data)=>{
 
 //// ROUTER BODY /////
 
+app.get('/', (req,res)=>{
+  res.end('hello carchain..');
+})
 
 //yeni işlem ekleme
 app.post("/newTransaction", (req, res) => {
