@@ -2,8 +2,9 @@ var mongoose = require('mongoose');
 var Schema = mongoose.Schema;
 
 var nodeShema = new Schema({
-    ip:{type:String, unique:true, required:true},
-    port:{type:String,required:true},
+    host: {type:String},
+    ip:{type:String},
+    port:{type:String},
     path:{type:String}
 })
 
