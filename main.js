@@ -5,6 +5,7 @@ const bodyParser = require("body-parser");
 const dateFormat = require("dateformat");
 const sha256 = require("sha256");
 const Request = require("request");
+const axios = require("axios");
 
 var mongoose = require("mongoose");
 
@@ -25,6 +26,25 @@ var payload = { };
 var secret = 'xxx';
 
 
+//connection veriables
+let db_urls = [
+  'mongodb://localhost:27017/carchain',
+  'mongodb://carchainadmin:carchain1@ds357955.mlab.com:57955/chaincar',
+  'mongodb://node2:nodetest2@ds056549.mlab.com:56549/node-test2'
+];
+
+//server veriables
+let nodes = [
+  //"http://localhost:8080",
+  "https://node-test-238108.appspot.com",
+  "https://node-test2-238819.appspot.com"
+];
+
+
+
+
+
+
 app.use(cors()); 
 
 app.use(bodyParser.json());//json formatlarını pars edecek
@@ -37,44 +57,29 @@ let _Block = require("./blockchain").Block;
 
 let testChain = new BlockChain();
 
-let mainServerUri = "https://node-test-238108.appspot.com";
-
 //connection the db
-//let uri = "mongodb://localhost:27017/carchain";
-let uri = "mongodb://carchainadmin:carchain1@ds357955.mlab.com:57955/chaincar";
-
- mongoose.connect(uri,{useNewUrlParser:true},err => { //uri, { useNewUrlParser: true }, err =>
+ mongoose.connect(db_urls[2],{useNewUrlParser:true},err => { //uri, { useNewUrlParser: true }, err =>
   if (err) throw err;
   else console.log("connection successful");
-
-
 });
 
 
-// IP Control
-let ipControl = function(_ip){
 
-Node.find({'ip':_ip},'ip',(err,data)=>{
-  if(err) throw err;
-  
-  if(data.length == 0){
-   let _node = new Node({
-     ip: _ip,
-     port:"3000",
-     path: "/syncBlock"
-   })
-   _node.save( (err)=>{
-     if(err) throw err;
 
-     console.log('ip eklendi.');
-   } )
-
-  }
-
-  
-})
-
+//  SYNC - * -
+let syncUser = (user)=>{
+  nodes.forEach( (element)=>{
+    axios.post(element+'/newuser',user).then( (res=>{
+      console.log(res.body);
+    })).catch( (err)=>{
+      console.log(err);
+    })
+  })
 }
+
+
+
+
 
 
 
@@ -85,8 +90,9 @@ Node.find({'ip':_ip},'ip',(err,data)=>{
 //// ROUTER BODY /////
 
 app.get('/', (req,res)=>{
-  res.end('hello carchain..');
+  res.end('hello carchain.. from server-2');
 })
+
 
 //yeni işlem ekleme
 app.post("/newTransaction", (req, res) => {
@@ -141,6 +147,9 @@ app.post("/newTransaction", (req, res) => {
                   reject(data[i-1]);
               else if(data[i].hash !== sha256(data[i].index.toString() + data[i].timeStamp + JSON.stringify(data[i].transactions) + data[i].previousHash).toString() )
               {
+                console.log(data[i].hash);
+                console.log(sha256(data[i].index.toString() + data[i].timeStamp + JSON.stringify(data[i].transactions) + data[i].previousHash).toString());
+
                 reject(data[i]);
               }
               console.log('test edildi: '+ data[i-1].index);
@@ -181,9 +190,9 @@ app.post("/newTransaction", (req, res) => {
   });
 
     }).catch( (invalidBlock)=>{
-      //console.log('hatalı block : ');
-      //console.log(invalidBlock);
-      sync.syncBlock(invalidBlock.index)
+      console.log('hatalı block : ');
+      console.log(invalidBlock);
+      //sync.syncBlock(invalidBlock.index)
     })
 
    }
@@ -209,7 +218,6 @@ app.post("/queryTransaction",(req,res)=>{
 
 
 // yeni kullanıcı ekle ***
-
 app.post("/newuser", (req, res) => { //("/newuser", urlEncodedParser, (req, res) => {
 
   var user = new User(req.body);
@@ -220,6 +228,7 @@ app.post("/newuser", (req, res) => { //("/newuser", urlEncodedParser, (req, res)
     res.status(200).send(user);
     console.log("user Saved: " + user.name);
   });
+ // syncUser(user);
 });
 
 //kullanıcı sorgulama
@@ -268,6 +277,8 @@ app.post("/newcar/valid", (req, res) => {
   })
 
 });
+
+
 
 
 
