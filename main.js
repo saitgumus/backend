@@ -40,6 +40,10 @@ let nodes = [
   "https://node-test2-238819.appspot.com"
 ];
 
+//son block 
+let lastBlock = {
+  "index":0
+};
 
 
 
@@ -58,26 +62,83 @@ let _Block = require("./blockchain").Block;
 let testChain = new BlockChain();
 
 //connection the db
- mongoose.connect(db_urls[2],{useNewUrlParser:true},err => { //uri, { useNewUrlParser: true }, err =>
+ mongoose.connect(db_urls[0],{useNewUrlParser:true},err => { //uri, { useNewUrlParser: true }, err =>
   if (err) throw err;
   else console.log("connection successful");
 });
 
 
 
+//blockları doğrulama
+//  let isValidBlocks = new Promise( (res,rej)=>{
+//     Block.find({},(err,data)=>{
+//       for(let i=1;i<data.length ; i++){
+//         if(data[i].previousHash !== data[i-1].hash )
+//               rej(data[i-1]);
+//           else if(data[i].hash !== sha256(data[i].index.toString() + data[i].timeStamp + JSON.stringify(data[i].transactions) + data[i].previousHash).toString() )
+//           {
+//             //console.log(data[i].hash);
+//             //console.log(sha256(data[i].index.toString() + data[i].timeStamp + JSON.stringify(data[i].transactions) + data[i].previousHash).toString());
+//             reject(data[i]);
+//           }
+//           console.log('test edildi: '+ data[i-1].index);
+//       }
+//     }).sort({index:1})
+//  })
 
-//  SYNC - * -
+
+//  SYNC functions- * -
+
 let syncUser = (user)=>{
   nodes.forEach( (element)=>{
-    axios.post(element+'/newuser',user).then( (res=>{
+    axios.post(element+'/newuser',user).then( (res)=>{
       console.log(res.body);
-    })).catch( (err)=>{
+    }).catch( (err)=>{
       console.log(err);
     })
   })
 }
 
 
+let syncCar = (car)=>{
+  nodes.forEach( (element)=>{
+    axios.post(element+'/newcar',car).then( (res)=>{
+      console.log(res.body);
+    }).catch( (err)=>{
+      console.log(err);
+    })
+  })
+}
+
+
+//yeni oluşturulan bloğu diğer serverlara dağıtma..
+let syncBlock = (block)=>{
+  let message = {};
+    nodes.forEach( (element)=>{
+      axios.post(element+'/newBlock',block)
+      .then( (res)=>{
+          if(res.statusCode == 200){
+            console.log("blok "+element+" e eklendi.");
+            message = res.body;
+          }else{
+            message = res.body;
+          }
+        }
+      ).catch( (err)=>{
+        console.log(err);
+      })
+    })
+    return message;
+}
+
+
+//istenilen index numaralı bloğu başka serverdan alma
+let getOneBlock = (index)=>{
+  axios.post( nodes[0]+'/oneBlock', {"index":index})
+  .then( (res)=>{
+    return res.body;
+  })
+}
 
 
 
@@ -121,7 +182,7 @@ app.post("/newTransaction", (req, res) => {
         else{
 
           //genesis denetleme gövdesi
-          if(data.length == 0){
+          if(data.length == 0 || data[0].index != 0){
 
             //create genesis
             let genesis = testChain.Chain[0];
@@ -142,17 +203,18 @@ app.post("/newTransaction", (req, res) => {
 
           //yeni block ekleme
           let i=0;
+            //doğrulama
           for( i=1;i<data.length ; i++){
             if(data[i].previousHash !== data[i-1].hash )
                   reject(data[i-1]);
               else if(data[i].hash !== sha256(data[i].index.toString() + data[i].timeStamp + JSON.stringify(data[i].transactions) + data[i].previousHash).toString() )
               {
-                console.log(data[i].hash);
-                console.log(sha256(data[i].index.toString() + data[i].timeStamp + JSON.stringify(data[i].transactions) + data[i].previousHash).toString());
+                //console.log(data[i].hash);
+                //console.log(sha256(data[i].index.toString() + data[i].timeStamp + JSON.stringify(data[i].transactions) + data[i].previousHash).toString());
 
                 reject(data[i]);
               }
-              console.log('test edildi: '+ data[i-1].index);
+            //  console.log('test edildi: '+ data[i-1].index);
           }
 
           resolve(data[i-1]);
@@ -160,14 +222,7 @@ app.post("/newTransaction", (req, res) => {
       }).sort({index:1})
     })
     .then( (lastBlock)=>{
-      //yeni geçici blok (hash hesaplaması blockchain sınıfında tamamlanıp sonra DB'ye gönderilecek).
-  // gBlock = new _Block(
-  //   lastBlock.index+1,
-  //   dateFormat(),
-  //   testChain.pendingTransactions,
-  //   lastBlock.hash
-  // )
-
+    
   //askıdaki işlemleri temizle
   let time = dateFormat();
 
@@ -179,7 +234,26 @@ app.post("/newTransaction", (req, res) => {
     hash: sha256((lastBlock.index+1).toString() + time.toString() + JSON.stringify(testChain.pendingTransactions) +lastBlock.hash).toString()
   });
 
+  new Promise( (resolve,reject)=>{
+    let message = syncBlock(_Block);
 
+    if(message.sonuc || message.index){
+      resolve(message)
+    }else{
+      reject('blok dağıtımı yapılamadı');
+    }
+
+   }).then( (res)=>{
+     if(res.index){
+       let oldBlock = new Block(res);
+       oldBlock.save( (err)=>{
+         if(err) throw err;
+         console.log('serverdan gelen eski blok eklendi');
+       })
+     }
+   }).catch( (mesaj)=>{
+     console.log(mesaj);
+   })
 
   _block.save( (err)=>{
     if(err) throw err;
@@ -192,7 +266,12 @@ app.post("/newTransaction", (req, res) => {
     }).catch( (invalidBlock)=>{
       console.log('hatalı block : ');
       console.log(invalidBlock);
-      //sync.syncBlock(invalidBlock.index)
+      let newBlock = new Block(getOneBlock(invalidBlock.index))
+
+      newBlock.save( (err)=>{
+        if(err) throw err;
+        else console.log('blok düzeltildi');
+      })
     })
 
    }
@@ -217,9 +296,53 @@ app.post("/queryTransaction",(req,res)=>{
 
 
 
-// yeni kullanıcı ekle ***
-app.post("/newuser", (req, res) => { //("/newuser", urlEncodedParser, (req, res) => {
+//block sync
+app.post("/getLastBlock",(req,res)=>{
+  //cevap olarak son bloğu gönder
+  Block.find({},(err,data)=>{
+    if(err) throw err;
+    res.json(data);
+  }).sort({index:-1}).limit(1);
+})
 
+//diğer bir serverdan yeni blok geldiğinde
+app.post("/newBlock",(req,res)=>{
+  let newBlockIndex = req.index;
+  let lastBlock;
+    Block.find({}, (err,data)=>{
+      if(err) throw err;
+
+      lastBlock = data;
+    })
+
+    if(lastBlock.index < newBlockIndex){
+      let newBlock = new Block(req.body);
+      newBlock.save( (err)=>{
+        if(err) throw err;
+
+        res.statusCode(200).json({"sonuc":"yeni block eklendi"});
+      })
+    }else if(lastBlock.index == newBlockIndex){
+      res.statusCode(405).json(lastBlock);
+    }
+
+})
+
+//index numarsı verilen bloğu ver..
+app.post("/oneBlock",(req,res)=>{
+  Block.findOne({'index':req.body.index}, (err,data)=>{
+    if (err) throw err;
+    else{
+      res.json(data);
+    }
+  })
+})
+
+
+
+
+// yeni kullanıcı ekle ***
+app.post("/newuser", (req, res) => { 
   var user = new User(req.body);
 
   user.save(function(err) {
@@ -227,8 +350,9 @@ app.post("/newuser", (req, res) => { //("/newuser", urlEncodedParser, (req, res)
 
     res.status(200).send(user);
     console.log("user Saved: " + user.name);
-  });
- // syncUser(user);
+  })
+ 
+  syncUser(user);
 });
 
 //kullanıcı sorgulama
@@ -259,6 +383,7 @@ app.post("/newcar", (req, res) => {
     res.status(200).json({"sonuc":"başarılı"});
     console.log("car Saved sase: " + _car.saseNo);
   });
+  syncCar(_car);
 });
 
 //şase sorgulama
