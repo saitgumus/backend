@@ -4,20 +4,22 @@ const cors = require('cors');
 const bodyParser = require("body-parser");
 const dateFormat = require("dateformat");
 const sha256 = require("sha256");
-const Request = require("request");
+//const Request = require("request");
 const axios = require("axios");
+//const socket = require("socket.io");
+//const http = require("http");
+//const socketModule = require('./socket-server')
+
+var server = require('http').createServer(app)
+var io = require('socket.io').listen(server)
+
 
 var mongoose = require("mongoose");
-
-//**for sync */
-var sync = require("./sync");
-
 
 // ***Models***
 var User = require("./models/user");
 var Car = require("./models/cars");
 var Block = require("./models/Block");
-var Node = require("./models/nodeServer");
 
 
 //create json token **
@@ -37,14 +39,8 @@ let db_urls = [
 let nodes = [
   //"http://localhost:8080",
   "https://node-test-238108.appspot.com",
-  "https://node-test2-238819.appspot.com"
+ // "https://node-test2-238819.appspot.com"
 ];
-
-//son block 
-let lastBlock = {
-  "index":0
-};
-
 
 
 
@@ -56,54 +52,43 @@ app.use(bodyParser.json());//json formatlarını pars edecek
 //blockchain ***
 let BlockChain = require("./blockchain").BlockChain;
 let Transaction = require("./blockchain").Transaction;
-let _Block = require("./blockchain").Block;
 
 
 let testChain = new BlockChain();
 
 //connection the db
- mongoose.connect(db_urls[0],{useNewUrlParser:true},err => { //uri, { useNewUrlParser: true }, err =>
+ mongoose.connect(db_urls[2],{useNewUrlParser:true},err => {
   if (err) throw err;
-  else console.log("connection successful");
+  else console.log("database connection successfully");
 });
 
 
 
-//blockları doğrulama
-//  let isValidBlocks = new Promise( (res,rej)=>{
-//     Block.find({},(err,data)=>{
-//       for(let i=1;i<data.length ; i++){
-//         if(data[i].previousHash !== data[i-1].hash )
-//               rej(data[i-1]);
-//           else if(data[i].hash !== sha256(data[i].index.toString() + data[i].timeStamp + JSON.stringify(data[i].transactions) + data[i].previousHash).toString() )
-//           {
-//             //console.log(data[i].hash);
-//             //console.log(sha256(data[i].index.toString() + data[i].timeStamp + JSON.stringify(data[i].transactions) + data[i].previousHash).toString());
-//             reject(data[i]);
-//           }
-//           console.log('test edildi: '+ data[i-1].index);
-//       }
-//     }).sort({index:1})
-//  })
+
 
 
 //  SYNC functions- * -
 
 let syncUser = (user)=>{
+  sendMessageToSocket('user sync doing..')
   nodes.forEach( (element)=>{
-    axios.post(element+'/newuser',user).then( (res)=>{
+    axios.post(element+'/addUser',user).then( (res)=>{
       console.log(res.body);
+      sendMessageToSocket(res.body);
     }).catch( (err)=>{
       console.log(err);
+      sendMessageToSocket('there is some error for userSync :( ');
     })
   })
 }
 
 
 let syncCar = (car)=>{
+  sendMessageToSocket('sync.. for new car.');
   nodes.forEach( (element)=>{
-    axios.post(element+'/newcar',car).then( (res)=>{
-      console.log(res.body);
+    axios.post(element+'/addCar',car).then( (res)=>{
+      console.log(res.body.sonuc);
+      sendMessageToSocket(res.body)
     }).catch( (err)=>{
       console.log(err);
     })
@@ -113,19 +98,24 @@ let syncCar = (car)=>{
 
 //yeni oluşturulan bloğu diğer serverlara dağıtma..
 let syncBlock = (block)=>{
-  let message = {};
+  let message = {message:""};
+  sendMessageToSocket('new block sync..');
     nodes.forEach( (element)=>{
       axios.post(element+'/newBlock',block)
       .then( (res)=>{
-          if(res.statusCode == 200){
+        console.log(res.data);
+
+          if(res.data[0].sonuc == "ok"){
             console.log("blok "+element+" e eklendi.");
-            message = res.body;
+            sendMessageToSocket('new block added to '+element);
+            message.message = "ok";
           }else{
-            message = res.body;
+            message.message = "not";
           }
         }
       ).catch( (err)=>{
         console.log(err);
+        sendMessageToSocket(err);
       })
     })
     return message;
@@ -151,7 +141,8 @@ let getOneBlock = (index)=>{
 //// ROUTER BODY /////
 
 app.get('/', (req,res)=>{
-  res.end('hello carchain.. from server-2');
+  // res.end('hello carchain.. from server-1 -addCar entegre adildi- change /newBlock (version s1 1.1)');
+  res.sendFile( __dirname+'/index.html')
 })
 
 
@@ -171,7 +162,7 @@ app.post("/newTransaction", (req, res) => {
 
 
   res.status(200).json({"sonuc":"islem alındı."});
-   
+   sendMessageToSocket('yeni islem alındı..');
 
   if(testChain.pendingTransactions.length >= 3){
 
@@ -200,10 +191,11 @@ app.post("/newTransaction", (req, res) => {
             } );
           }
 
-
           //yeni block ekleme
           let i=0;
+
             //doğrulama
+            sendMessageToSocket('checking the chain...');
           for( i=1;i<data.length ; i++){
             if(data[i].previousHash !== data[i-1].hash )
                   reject(data[i-1]);
@@ -216,7 +208,7 @@ app.post("/newTransaction", (req, res) => {
               }
             //  console.log('test edildi: '+ data[i-1].index);
           }
-
+          sendMessageToSocket('checked chain index:0 to index:'+data[i-1].index.toString());
           resolve(data[i-1]);
         }
       }).sort({index:1})
@@ -235,16 +227,16 @@ app.post("/newTransaction", (req, res) => {
   });
 
   new Promise( (resolve,reject)=>{
-    let message = syncBlock(_Block);
+    let message = syncBlock(_block);
 
-    if(message.sonuc || message.index){
-      resolve(message)
+    if(message.message == "ok"){
+      resolve(message.message)
     }else{
       reject('blok dağıtımı yapılamadı');
     }
 
    }).then( (res)=>{
-     if(res.index){
+     if(res.index){//cevap olarak blok dönerse önce o bloğu db'ye ekle
        let oldBlock = new Block(res);
        oldBlock.save( (err)=>{
          if(err) throw err;
@@ -253,6 +245,7 @@ app.post("/newTransaction", (req, res) => {
      }
    }).catch( (mesaj)=>{
      console.log(mesaj);
+     sendMessageToSocket(mesaj);
    })
 
   _block.save( (err)=>{
@@ -261,22 +254,25 @@ app.post("/newTransaction", (req, res) => {
 
     testChain.pendingTransactions = [];
     console.log('yeni block veri tabanına eklendi. index: ' + _block.index);
+    sendMessageToSocket('new block is added to mydb.. index:'+_block.index);
   });
 
     }).catch( (invalidBlock)=>{
       console.log('hatalı block : ');
       console.log(invalidBlock);
+      sendMessageToSocket('hatalı block ->index: '+invalidBlock.index);
       let newBlock = new Block(getOneBlock(invalidBlock.index))
-
+      sendMessageToSocket('block onarılıyor');
       newBlock.save( (err)=>{
         if(err) throw err;
-        else console.log('blok düzeltildi');
+        else{
+          console.log('blok düzeltildi');
+        sendMessageToSocket('onarılma tamamlandı.');
+        }
       })
     })
 
    }
-
-   
   
 });
 
@@ -307,25 +303,31 @@ app.post("/getLastBlock",(req,res)=>{
 
 //diğer bir serverdan yeni blok geldiğinde
 app.post("/newBlock",(req,res)=>{
-  let newBlockIndex = req.index;
-  let lastBlock;
-    Block.find({}, (err,data)=>{
+  //let newBlockIndex = req.body.index;
+  // let lastBlock;
+  //   Block.find({}, (err,data)=>{
+  //     if(err) throw err;
+      
+      
+  //   }).sort({index:-1}).limit(1);
+
+    // if(lastBlock.index < newBlockIndex){
+    //   let newBlock = new Block(req.body);
+    //   newBlock.save( (err)=>{
+    //     if(err) throw err;
+
+    //     res.statusCode(200).json({"sonuc":"yeni block eklendi"});
+    //   })
+    // }else if(lastBlock.index == newBlockIndex){
+    //   res.statusCode(405).json(lastBlock);
+    // }
+    let newBlock = new Block(req.body);
+    newBlock.save( (err)=>{
       if(err) throw err;
 
-      lastBlock = data;
+      res.status(200).json({sonuc:"ok"});
+      console.log('basarılı');
     })
-
-    if(lastBlock.index < newBlockIndex){
-      let newBlock = new Block(req.body);
-      newBlock.save( (err)=>{
-        if(err) throw err;
-
-        res.statusCode(200).json({"sonuc":"yeni block eklendi"});
-      })
-    }else if(lastBlock.index == newBlockIndex){
-      res.statusCode(405).json(lastBlock);
-    }
-
 })
 
 //index numarsı verilen bloğu ver..
@@ -340,7 +342,6 @@ app.post("/oneBlock",(req,res)=>{
 
 
 
-
 // yeni kullanıcı ekle ***
 app.post("/newuser", (req, res) => { 
   var user = new User(req.body);
@@ -349,12 +350,22 @@ app.post("/newuser", (req, res) => {
     if (err) throw err;
 
     res.status(200).send(user);
-    console.log("user Saved: " + user.name);
+    sendMessageToSocket('yeni kullanıcı eklendi'+user.userName );
   })
  
   syncUser(user);
 });
 
+//diğer serverdan kullanıcı geldiğinde
+app.post("/addUser",(req,res)=>{
+  var user = new User(req.body);
+
+  user.save(function(err) {
+    if (err) throw err;
+
+    res.status(200).JSON({"eklenen":user.userName});
+  })
+})
 //kullanıcı sorgulama
 app.post("/newuser/valid", (req,res)=>{
 
@@ -382,9 +393,22 @@ app.post("/newcar", (req, res) => {
 
     res.status(200).json({"sonuc":"başarılı"});
     console.log("car Saved sase: " + _car.saseNo);
+    sendMessageToSocket('car saved. chassis:'+_car.saseNo);
   });
   syncCar(_car);
 });
+
+//başka serverdan gelen aracı kaydet..
+app.post("/addCar", (req,res)=>{
+  let _car = new Car(req.body);
+
+  _car.save(function(err) {
+    if (err) throw err;
+
+    res.status(200).json({"sonuc":"başarılı"});
+  });
+})
+
 
 //şase sorgulama
 app.post("/newcar/valid", (req, res) => {
@@ -409,10 +433,35 @@ app.post("/newcar/valid", (req, res) => {
 
 
 
+//const server = http.Server(app);
+server.listen(8080);
+console.log('listening clients on port:8080');
+
+
+isConnect = false;
 
 
 
-app.listen(8080, err => {
-  if (err) throw err;
-  else console.log("successfully listening :8080 ");
-});
+
+
+io.sockets.on('connection', (socket)=>{
+
+  isConnect = true;
+  socket.on('disconnect', function(data){
+      isConnect = false;
+  })
+
+  socket.on('send message',function(data){
+//       io.sockets.emit('new message', { msg: data, test:'sait'})
+  })
+})
+
+
+
+function sendMessageToSocket(data){
+  if(isConnect){
+      io.sockets.emit('test server', {msg:data});
+  }else{
+    console.log('socket connection error');
+  }
+}
