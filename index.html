@@ -9,6 +9,64 @@
     <!-- Latest compiled and minified CSS -->
 <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css" integrity="sha384-BVYiiSIFeK1dGmJRAkycuHAHRg32OmUcww7on3RYdg4Va+PmSTsz/K68vbdEjh4u" crossorigin="anonymous">
 
+<style>
+    @import url('https://fonts.googleapis.com/css?family=Montserrat');
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+body {
+  font-family: 'Montserrat', sans-serif;
+  background-color: #000;
+  color: rgb(235, 233, 230);
+}
+.clr .well{
+    color: darkcyan;
+    font-family: 'Times New Roman', Times, serif;
+}
+.clr{
+    opacity: 0.3;
+}
+.container {
+  height: 50vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+.container p {
+  font-size: 3rem;
+  padding: 0.5rem;
+  font-weight: bold;
+  letter-spacing: 0.1rem;
+  text-align: center;
+  overflow: hidden;
+}
+.container p span.typed-text {
+  font-weight: normal;
+  color: #dd7732;
+}
+.container p span.cursor {
+  display: inline-block;
+  background-color: #ccc;
+  margin-left: 0.1rem;
+  width: 3px;
+  animation: blink 1s infinite;
+}
+.container p span.cursor.typing {
+  animation: none;
+}
+@keyframes blink {
+  0%  { background-color: #ccc; }
+  49% { background-color: #ccc; }
+  50% { background-color: transparent; }
+  99% { background-color: transparent; }
+  100%  { background-color: #ccc; }
+}
+</style>
+
+
 <script   src="https://code.jquery.com/jquery-3.4.1.min.js"   integrity="sha256-CSXorXvZcTkaix6Yvo6HppcZGetbYMGWSFlBw8HfCJo="   crossorigin="anonymous"></script>
 
 <script src="/socket.io/socket.io.js"></script>
@@ -16,48 +74,109 @@
 
 <body>
 <div>
-<h2> server - 2 </h2>
+<h2> server - 1 </h2>
 <p> add logger - socketIo </p>
+<p> 11may19 - 14:00 /axios güncellemesi yapıldı. </p>
+ <p> 12 may - 02:00 /design updates..</p>
+  <p> 21 may / sync updates (user) </p>
+  <p> 23 may / async functions (ES7) - v3 </p>
 </div>
+
+<div class="container">
+    <p> Coding is <span class="typed-text"></span><span class="cursor">&nbsp;</span></p>
+  </div>
+
 
     <div class="container">
         <div class="row">
-            <div class="chat" id="chat">
+            <div class="chat clr" id="chat">
             </div>
+            <!--
+
             <form action="" id="messageForm">
                 <div class="form-group">
                     <label for="message">enter message</label>
-                    <textarea class="form-control"  id="message" cols="30" rows="10"></textarea>
+                    <textarea class="form-control"  id="message" cols="10" rows="1"></textarea>
                     <input type="submit" class="btn btn-primary" value="send message" />
                 </div>
             </form>
+            -->
         </div>
     </div>
 
-
+<!-- socket script-->
     <script>
     $(function(){
         var socket = io.connect();
-        var $messageForm = $('#messageForm');
-        var $message = $('#message');
+       // var $messageForm = $('#messageForm');
+       // var $message = $('#message');
         var $chat = $('#chat');
 
-        $messageForm.submit( function(e){
-            e.preventDefault();
-            socket.emit('send message', $message.val());
-            $message.val('');
+        // $messageForm.submit( function(e){
+        //     e.preventDefault();
+        //     socket.emit('send message', $message.val());
+        //     $message.val('');
 
-        })
+        // })
+
 
         socket.on('new message', function(data){
             $chat.append('<div class="well"> '+data.msg +' -'+data.test+'<div>')
         })
 
         socket.on('test server', function(data){
-            $chat.append('<div class="well"> '+data.msg +'<div>')
+            $chat.append('<div class="well"> <p> '+data.msg +'<div>')
         })
     })
 
     </script>
+
+
+
+<!-- animation script -->
+    <script>
+        const typedTextSpan = document.querySelector(".typed-text");
+const cursorSpan = document.querySelector(".cursor");
+
+const textArray = ["hard", "fun", "a journey", "LIFE"];
+const typingDelay = 200;
+const erasingDelay = 100;
+const newTextDelay = 2000; // Delay between current and next text
+let textArrayIndex = 0;
+let charIndex = 0;
+
+function type() {
+  if (charIndex < textArray[textArrayIndex].length) {
+    if(!cursorSpan.classList.contains("typing")) cursorSpan.classList.add("typing");
+    typedTextSpan.textContent += textArray[textArrayIndex].charAt(charIndex);
+    charIndex++;
+    setTimeout(type, typingDelay);
+  } 
+  else {
+    cursorSpan.classList.remove("typing");
+  	setTimeout(erase, newTextDelay);
+  }
+}
+
+function erase() {
+	if (charIndex > 0) {
+    if(!cursorSpan.classList.contains("typing")) cursorSpan.classList.add("typing");
+    typedTextSpan.textContent = textArray[textArrayIndex].substring(0, charIndex-1);
+    charIndex--;
+    setTimeout(erase, erasingDelay);
+  } 
+  else {
+    cursorSpan.classList.remove("typing");
+    textArrayIndex++;
+    if(textArrayIndex>=textArray.length) textArrayIndex=0;
+    setTimeout(type, typingDelay + 1100);
+  }
+}
+
+document.addEventListener("DOMContentLoaded", function() { // On DOM Load initiate the effect
+  if(textArray.length) setTimeout(type, newTextDelay + 250);
+});
+    </script>
+
 </body>
 </html>
