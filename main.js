@@ -3,6 +3,7 @@ const app = express();
 const cors = require('cors');
 const bodyParser = require("body-parser");
 const dateFormat = require("dateformat");
+const moment = require("moment");
 const sha256 = require("sha256");
 const axios = require("axios");
 
@@ -28,13 +29,14 @@ var secret = 'xxx';
 let db_urls = [
   'mongodb://localhost:27017/carchain',
   'mongodb://carchainadmin:carchain1@ds357955.mlab.com:57955/chaincar',
-  'mongodb://node2:nodetest2@ds056549.mlab.com:56549/node-test2'
+  'mongodb://node2:nodetest2@ds056549.mlab.com:56549/node-test2',
+  'mongodb://nodetest3:nodetest3@ds261116.mlab.com:61116/node-test3'
 ];
 
 //server veriables
 let nodes = [
   //"http://localhost:8080",
- // "https://node-test-238108.appspot.com",
+  "https://node-test-238108.appspot.com",
   "https://node-test2-238819.appspot.com"
 ];
 
@@ -58,7 +60,7 @@ let Transaction = require("./blockchain").Transaction;
 let testChain = new BlockChain();
 
 //connection the db
- mongoose.connect(db_urls[1],{useNewUrlParser:true},err => {
+ mongoose.connect(db_urls[3],{useNewUrlParser:true},err => {
   if (err) throw err;
   else console.log("database connection successfully");
 });
@@ -161,44 +163,75 @@ for(item of nodes){
 
 //istenilen index numaralı bloğu başka serverdan alma
 let getOneBlock = async (index)=>{
+  let data = {index:0};
 
   for(item of nodes){
     await axios.post(item+'/oneBlock', {"index":index})
     .then( r=>{
-      if(r.data.index != 0) 
-          return r.data
+      if(r.data.index != 0){
+        data = r.data;
+      }
     }).catch( e=>{console.log(e)})
   }
-  
+  return data;
 sendMessageToSocket('hatalı block diğer serverlardan alınamadı');
-  
-return new Block({
-  index: 0,
-  timeStamp:'',
-  transactions:[],
-  previousHash: '',
-  hash: ''
-});
+
 }
 
 
 //eksik olan bloğu tamamlamak için
-let eksikBlokTamamla = async (index)=>{
-   let block = getOneBlock(index)
+let eksikBlokTamamla = async ()=>{
+ let dbIndexes;
 
-   if(block.index != 0){
-     block.save( (err)=>{
-       if(err) throw err;
+  await Block.find({},{'index':1,'_id':0},(err,d)=>{
+               dbIndexes = d;
+            }  ).sort({'index':1})
 
-       sendMessageToSocket('eksik blok eklendi.')
-       console.log('eksik blok eklendi.')
-     })
-   }
+  if(LastBlockData.index+1 != bs.length){
+    for(let i=0; i<bs.length; i++){
+      if(i != bs[i]){
+        let block =await getOneBlock(i);
+
+            if(block.index != 0){
+                block.save( (err)=>{
+                if(err) throw err;
+
+              sendMessageToSocket('eksik blok eklendi.')
+              console.log('eksik blok eklendi.')
+          })
+          }else sendMessageToSocket('eksik blok eklenemedi')
+      }
+    }
+    
+  }
+   
 }
 
 
 
 
+
+//** DİNAMİK İŞLEM SAYISI */
+
+//eğer 1 saniye içerisinde birden fazla istek gelirse isteğe göre dinamik olarak bloğun işlem alma sayısı artacak
+let transactionCount = 5;
+let oldTime = moment();
+
+let setTransactionCount = ()=>{
+  var now = moment();
+  var dif = now.diff(oldTime,'seconds');
+
+  if(dif<1){
+    if(transactionCount<50)
+      transactionCount += 10;
+  }else if(dif>0 && dif<5){
+      transactionCount = 15
+  }else{
+    transactionCount = 5
+  }
+  oldTime = now;
+  sendMessageToSocket('her blok için alınacak işlem sayısı güncellendi: '+transactionCount);
+}
 
 
 
@@ -220,6 +253,7 @@ app.get('/', (req,res)=>{
 //yeni işlem ekleme
 app.post("/newTransaction", (req, res) => {
 
+  setTransactionCount();
 
   let _transaction = new Transaction(
     req.body.user,
@@ -235,7 +269,7 @@ app.post("/newTransaction", (req, res) => {
   res.status(200).json({"sonuc":"islem alındı."});
    sendMessageToSocket('yeni islem alındı..');
 
-  if(testChain.pendingTransactions.length >= 3){
+  if(testChain.pendingTransactions.length >= transactionCount ){
     updateLastBlockData();
     new Promise( (resolve,reject)=>{  
       //diğer serverlardan alınan son blok bilgisi..
@@ -271,10 +305,11 @@ app.post("/newTransaction", (req, res) => {
             //doğrulama
             sendMessageToSocket('checking the chain...');
           for( i=1;i<data.length ; i++){
-           
-            //hashler kontrolü
+            
+            
+             // ** hashler kontrolü
             if(data[i].previousHash !== data[i-1].hash )
-                  reject(data[i-1]);
+                 reject(data[i-1]);
             
             //içerik ve hash kontrolü
             if(data[i].hash !== sha256(data[i].index.toString() + data[i].timeStamp + JSON.stringify(data[i].transactions) + data[i].previousHash).toString() )
@@ -282,6 +317,10 @@ app.post("/newTransaction", (req, res) => {
                 reject(data[i]);
               }
             //  console.log('test edildi: '+ data[i-1].index);
+          }
+          //eksik blok varsa
+          if(data.length != i){
+            eksikBlokTamamla();
           }
           sendMessageToSocket('checked chain index:0 to index:'+data[i-1].index.toString());
           resolve(reqData);
@@ -314,32 +353,42 @@ app.post("/newTransaction", (req, res) => {
   });
 
   //bloğu dağıt
-  syncBlock(_block);
-
+    syncBlock(_block);
     }).catch( (invalidBlock)=>{
-      //hatalı bloğu kaldır
-        Block.findOneAndDelete({index:invalidBlock.index},(err,res)=>{
-          if(err) throw err;
-
-          console.log('hatalı blog silindi');
-        })
       
+      new Promise(
+        (resolve,reject)=>{
+          Block.deleteOne({'index':invalidBlock.index},(err)=>{
+            if(err)
+              console.log('silme hatası');
+          })
+          let gblock = getOneBlock(invalidBlock.index);
+          if(gblock.index != 0)
+            resolve(gblock)
+          else reject('blok onarılamadı');
+        }
+      ).then(
+        r =>{
+            let newBlock = new Block(r)
 
-      //hatalının yerine yenisini diğer serverlardan al
-      let newBlock = new Block(getOneBlock(invalidBlock.index))
-      sendMessageToSocket(invalidBlock.index+' index numaralı block onarılıyor');
+            sendMessageToSocket(invalidBlock.index+' index numaralı block onarılıyor');
 
-      if(newBlock.index != 0){
-        newBlock.save( (err)=>{
-          if(err) throw err;
-          else{
-            console.log('blok düzeltildi');
-          sendMessageToSocket('onarılma tamamlandı.');
-          }
-        })
-      }else{
-        sendMessageToSocket('hatalı block onarılamadı..');
-      }
+            newBlock.save( (err)=>{
+              if(err){
+                console.log('kaydetme sırasında hata..')
+                throw err;
+              }
+              else{
+                console.log('blok düzeltildi');
+              sendMessageToSocket('onarılma tamamlandı.');
+              }
+            })
+
+        }
+      ).catch(
+        e=>{console.log(e)}
+      )
+
       
     })
 
@@ -383,6 +432,7 @@ app.post("/newBlock",(req,res)=>{
         throw err;
       }
 
+      updateLastBlockData();
       res.status(200).json({sonuc:"basarılı"});
       console.log('yeni blok eklendi');
     })
@@ -546,4 +596,5 @@ let SendPost = (url,data)=>{
   })
   })
 }
+
 
